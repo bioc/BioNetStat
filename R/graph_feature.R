@@ -356,6 +356,7 @@ degreeCentrality <- function(expr, labels, adjacencyMatrix) {
     A[[a]]<-adjacencyMatrix(expr[labels==unique(labels)[a],])
     v[a]<-(sum(!(A[[1]] %in% c(1,0))) != 0)
   }
+  A<-lapply(A,abs)
   weighted <- NULL
   if(any(v)) weighted <- TRUE
   G<-lapply(A,graph.adjacency, mode="undirected", weighted=weighted)
@@ -376,12 +377,41 @@ betweennessCentrality <- function(expr, labels, adjacencyMatrix) {
     A[[a]]<-adjacencyMatrix(expr[labels==unique(labels)[a],])
     v[a]<-(sum(!(A[[1]] %in% c(1,0))) != 0)
   }
+  A<-lapply(A,abs)
   weighted <- NULL
   if(any(v)) weighted <- TRUE
   if (!is.null(weighted)) A<-lapply(A,invWeigthts)
   G<-lapply(A,graph.adjacency, mode="undirected", weighted=weighted)
   result <- lapply(G, betweenness)
   return(result)
+}
+
+#' @rdname nodeScores
+#' @examples 
+#' 
+#' # Edges Betweenness Centrality
+#' betweennessEdgesCentrality(expr, labels, adjacencyMatrix1)
+#' @export
+betweennessEdgesCentrality <- function(expr, labels, adjacencyMatrix) {
+  A<-list()
+  v<-vector(length=length(unique(labels)))
+  for (a in seq_len(length(unique(labels)))){
+    A[[a]]<-adjacencyMatrix(expr[labels==unique(labels)[a],])
+    v[a]<-(sum(!(A[[1]] %in% c(1,0))) != 0)
+  }
+  A<-lapply(A,abs)
+  weighted <- NULL
+  if(any(v)) weighted <- TRUE
+  if (!is.null(weighted)) A<-lapply(A,invWeigthts)
+  G<-lapply(A,graph.adjacency, mode="undirected", weighted=weighted)
+  result<-lapply(G, function(x){
+    M<-as.matrix(as_adj(x,edges = T,type = "lower"))
+    M[M!=0]<-fun(x, directed=FALSE)
+    return(as.vector(M))
+  })# guarda a centralidade
+  s<-do.call(rbind,result)
+  noEdges<-c(which(apply(s,2,function (x) all(x==0))))
+  return(length(lapply(result, function(x) x[-c(noEdges)])[[1]]))
 }
 
 #' @rdname nodeScores
@@ -397,6 +427,7 @@ closenessCentrality <- function(expr, labels, adjacencyMatrix) {
     A[[a]]<-adjacencyMatrix(expr[labels==unique(labels)[a],])
     v[a]<-(sum(!(A[[1]] %in% c(1,0))) != 0)
   }
+  A<-lapply(A,abs)
   weighted <- NULL
   if(any(v)) weighted <- TRUE
   if (!is.null(weighted)) A<-lapply(A,invWeigthts)
@@ -418,6 +449,7 @@ eigenvectorCentrality <- function(expr, labels, adjacencyMatrix) {
     A[[a]]<-adjacencyMatrix(expr[labels==unique(labels)[a],])
     v[a]<-(sum(!(A[[1]] %in% c(1,0))) != 0)
   }
+  A<-lapply(A,abs)
   weighted <- NULL
   if(any(v)) weighted <- TRUE
   G<-lapply(A,graph.adjacency, mode="undirected", weighted=weighted)
@@ -438,6 +470,7 @@ clusteringCoefficient <- function(expr, labels, adjacencyMatrix) {
     A[[a]]<-adjacencyMatrix(expr[labels==unique(labels)[a],])
     v[a]<-(sum(!(A[[1]] %in% c(1,0))) != 0)
   }
+  A<-lapply(A,abs)
   weighted <- NULL
   if(any(v)) weighted <- TRUE
   if (!is.null(weighted)) result <- lapply(A, clusterCoef)
@@ -535,6 +568,7 @@ averageShortestPath <- function(expr, labels, adjacencyMatrix, options=NULL) {
     A[[a]]<-adjacencyMatrix(expr[labels==unique(labels)[a],])
     v[a]<-(sum(!(A[[1]] %in% c(1,0))) != 0)
   }
+  A<-lapply(A,abs)
   weighted <- NULL
   if(any(v)) weighted <- TRUE
   if (!is.null(weighted)) A<-lapply(A,invWeigthts)
@@ -568,6 +602,7 @@ spectralEntropies <- function(expr, labels, adjacencyMatrix, options=list(bandwi
   for (a in seq_len(length(unique(labels)))){
     A[[a]]<-adjacencyMatrix(expr[labels==unique(labels)[a],])
   }
+  A<-lapply(A,abs)
   fs<- nSpectralDensities(A,bandwidth=options$bandwidth)
   if (sum(is.na(fs)) > 0)
     return(NA)
@@ -584,11 +619,26 @@ spectralEntropies <- function(expr, labels, adjacencyMatrix, options=list(bandwi
 
 resInt <- function(A,expr,weighted,fun){
   n <- ncol(expr)# numero de genes
+  A<-lapply(A,abs)
   G<-lapply(A,graph.adjacency, mode="undirected", weighted=weighted)# guarda a rede
   s<-lapply(G, fun)# guarda a centralidade
   s<-do.call(rbind,s) # "s" é uma matrix onde serão guardados os vetores dos betweenness e um vetor de média deles
   s<-rbind(s,apply(s,MARGIN=2,FUN=mean))
-  partial<-apply(s[-dim(s)[1],],1, function(x) dist(rbind(x,s[dim(s)[1],]))/sqrt(n))# calcula a distancia euclidiana entre cada vetor de betweenness e o vetor medio
+  partial<-apply(s[-dim(s)[1],],1, function(x) dist(rbind(x,s[dim(s)[1],]))/sqrt(dim(s)[2]))# calcula a distancia euclidiana entre cada vetor de betweenness e o vetor medio
+  return(c(mean(partial),partial)) # A estatítica é a soma das distancias
+}
+
+edgesResInt <- function(A,expr,weighted,fun){
+  A<-lapply(A,abs)
+  G<-lapply(A,graph.adjacency, mode="undirected", weighted=weighted)# guarda a rede
+  s<-lapply(G, function(x){
+    M<-as.matrix(as_adj(x,edges = T,type = "lower"))
+    M[M!=0]<-fun(x, directed=FALSE)
+    return(as.vector(M))
+  })# guarda a centralidade
+  s<-do.call(rbind,s) # "s" é uma matrix onde serão guardados os vetores dos betweenness e um vetor de média deles
+  s<-rbind(s,apply(s,MARGIN=2,FUN=mean))
+  partial<-apply(s[-dim(s)[1],],1, function(x) dist(rbind(x,s[dim(s)[1],]))/sqrt(sum(s[dim(s)[1],]!=0)))# calcula a distancia euclidiana entre cada vetor de betweenness e o vetor medio
   return(c(mean(partial),partial)) # A estatítica é a soma das distancias
 }
 
@@ -725,39 +775,82 @@ eigenvectorCentralityTest <- function(expr, labels, adjacencyMatrix,numPermutati
 #' # Clustering coefficient test
 #' clusteringCoefficientTest(expr, labels, adjacencyMatrix1,numPermutations=1)
 #' @export
-clusteringCoefficientTest <- function(expr, labels, adjacencyMatrix, numPermutations=1000, options=NULL, BPPARAM=MulticoreParam()) {
-    lab<-levels(as.factor(labels)) # salva os fatores de labels em lab.
-    if(any(lab=="-1")) lab<-lab[-which(lab=="-1")] # se houver o fator "-1" ele é retirado dos fatores.
-    A<-lapply(lab, function(x) adjacencyMatrix(expr[labels==x,]))
-    weighted <- NULL # Define o weighted como NULL, assim como na função original
-    v<-vapply(A,FUN = function(x) sum(x==0) + sum(x==1) == length(x),FUN.VALUE = vector(length = 1))
-    if(any(!v)) weighted <- TRUE
-    if (!is.null(weighted)) { 
-      n <- ncol(expr)
+clusteringCoefficientTest <- function(expr, labels, adjacencyMatrix, numPermutations=1000, options=NULL, BPPARAM=NULL) {
+  lab<-levels(as.factor(labels)) # salva os fatores de labels em lab.
+  if(any(lab=="-1")) lab<-lab[-which(lab=="-1")] # se houver o fator "-1" ele é retirado dos fatores.
+  A<-lapply(lab, function(x) adjacencyMatrix(expr[labels==x,]))
+  weighted <- NULL # Define o weighted como NULL, assim como na função original
+  v<-vapply(A,FUN = function(x) sum(x==0) + sum(x==1) == length(x),FUN.VALUE = vector(length = 1))
+  if(any(!v)) weighted <- TRUE
+  if (!is.null(weighted)) { 
+    n <- ncol(expr)
+    A<-lapply(A,abs)
+    s<-lapply(A, clusterCoef)
+    s<-do.call(rbind,s)
+    s<-rbind(s,apply(s,MARGIN=2,FUN=mean))
+    partial<-apply(s[-dim(s)[1],],1, function(x) dist(rbind(x,s[dim(s)[1],]))/sqrt(n))
+    output<-c(sum(partial),partial)
+  }
+  else{
+    output<-resInt(A,expr,weighted,function(x){transitivity(x,type="local", isolates="zero")})
+  }
+  if(is.null(BPPARAM)) results<-lapply(seq_len(numPermutations),function(i){
+    l <- sample(labels, replace = FALSE)
+    A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
+    if (!is.null(weighted)){ 
+      A<-lapply(A,abs)
       s<-lapply(A, clusterCoef)
       s<-do.call(rbind,s)
       s<-rbind(s,apply(s,MARGIN=2,FUN=mean))
       partial<-apply(s[-dim(s)[1],],1, function(x) dist(rbind(x,s[dim(s)[1],]))/sqrt(n))
       output<-c(sum(partial),partial)
     }
-    else{
-      output<-resInt(A,expr,weighted,function(x){transitivity(x,type="local", isolates="zero")})
+    else return(resInt(A,expr,weighted,function(x){transitivity(x,type="local", isolates="zero")}))
+  })
+  else  results<-bplapply(seq_len(numPermutations),function(i){
+    l <- sample(labels, replace = FALSE)
+    A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
+    if (!is.null(weighted)){ 
+      A<-lapply(A,abs)
+      s<-lapply(A, clusterCoef)
+      s<-do.call(rbind,s)
+      s<-rbind(s,apply(s,MARGIN=2,FUN=mean))
+      res<-apply(s[-dim(s)[1],],1, function(x) dist(rbind(x,s[dim(s)[1],]))/sqrt(n))
+      return(sum(res))
     }
-    results<-bplapply(seq_len(numPermutations),function(i){
-      l <- sample(labels, replace = FALSE)
-      A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
-      if (!is.null(weighted)){ 
-        s<-lapply(A, clusterCoef)
-        s<-do.call(rbind,s)
-        s<-rbind(s,apply(s,MARGIN=2,FUN=mean))
-        res<-apply(s[-dim(s)[1],],1, function(x) dist(rbind(x,s[dim(s)[1],]))/sqrt(n))
-        return(sum(res))
-      }
-      else return(resInt(A,expr,weighted,function(x){transitivity(x,type="local", isolates="zero")}))
+    else return(resInt(A,expr,weighted,function(x){transitivity(x,type="local", isolates="zero")}))
     }, BPPARAM=BPPARAM)
-    results<-do.call(c,results)
-    pvalue <- (1 + sum(results >= output[1]))/(numPermutations + 1)
-    return(list("measure"=output[1], "p.value"=pvalue,"Partial"=output[-1]))
+  results<-do.call(c,results)
+  pvalue <- (1 + sum(results >= output[1]))/(numPermutations + 1)
+  return(list("measure"=output[1], "p.value"=pvalue,"Partial"=output[-1]))
+}
+
+#' @rdname networkTest
+#' @examples 
+#' 
+#' # Edge betweenness centrality test
+#' edgeBetweennessTest(expr, labels, adjacencyMatrix1,numPermutations=1)
+#' @export
+edgeBetweennessTest <- function(expr, labels, adjacencyMatrix, numPermutations=1000, options=NULL, BPPARAM=NULL) {
+  lab<-levels(as.factor(labels)) # salva os fatores de labels em lab.
+  if(any(lab=="-1")) lab<-lab[-which(lab=="-1")] # se houver o fator "-1" ele é retirado dos fatores.
+  A<-lapply(lab, function(x) adjacencyMatrix(expr[labels==x,]))
+  weighted <- NULL # Define o weighted como NULL, assim como na função original
+  v<-vapply(A,FUN = function(x) sum(x==0) + sum(x==1) == length(x),FUN.VALUE = vector(length = 1))
+  if(any(!v)) weighted <- TRUE
+  output<-edgesResInt(A,expr,weighted,edge_betweenness)
+  if(is.null(BPPARAM)) results<-lapply(seq_len(numPermutations),function(i){
+    l <- sample(labels, replace = FALSE)
+    A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
+    return(edgesResInt(A,expr,weighted,edge_betweenness)[1])})
+  else results<-bplapply(seq_len(numPermutations),function(i){
+    l <- sample(labels, replace = FALSE)
+    A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
+    return(edgesResInt(A,expr,weighted,edge_betweenness)[1])
+  }, BPPARAM=BPPARAM)
+  results<-do.call(c,results)
+  pvalue <- (1 + sum(results >= output[1]))/(numPermutations + 1)
+  return(list("measure"=output[1], "p.value"=pvalue,"Partial"=output[-1]))
 }
 
 # #' @rdname networkTest
@@ -798,14 +891,30 @@ clusteringCoefficientTest <- function(expr, labels, adjacencyMatrix, numPermutat
 #' # Degree distribution test
 #' degreeDistributionTest(expr, labels, adjacencyMatrix1,numPermutations=1)
 #' @export
-degreeDistributionTest <- function(expr, labels, adjacencyMatrix, numPermutations=1000, options=list(bandwidth="Silverman"), BPPARAM=MulticoreParam()) {
-
-    lab<-levels(as.factor(labels)) # salva os fatores de labels em lab.
-    if(any(lab=="-1")) lab<-lab[-which(lab=="-1")] # se houver o fator "-1" ele é retirado dos fatores.
-    A<-lapply(lab, function(x) adjacencyMatrix(expr[labels==x,]))
-    weighted <- NULL # Define o weighted como NULL, assim como na função original
-    v<-vapply(A,FUN = function(x) sum(x==0) + sum(x==1) == length(x),FUN.VALUE = vector(length = 1))
-    if(any(!v)) weighted <- TRUE
+degreeDistributionTest <- function(expr, labels, adjacencyMatrix, numPermutations=1000, options=list(bandwidth="Sturges"), BPPARAM=NULL) {
+  
+  lab<-levels(as.factor(labels)) # salva os fatores de labels em lab.
+  if(any(lab=="-1")) lab<-lab[-which(lab=="-1")] # se houver o fator "-1" ele é retirado dos fatores.
+  A<-lapply(lab, function(x) adjacencyMatrix(expr[labels==x,]))
+  A<-lapply(A,abs)
+  weighted <- NULL # Define o weighted como NULL, assim como na função original
+  v<-vapply(A,FUN = function(x) sum(x==0) + sum(x==1) == length(x),FUN.VALUE = vector(length = 1))
+  if(any(!v)) weighted <- TRUE
+  G<-lapply(A,graph.adjacency, mode="undirected", weighted=weighted)# guarda a rede
+  f<-nDegreeDensities(Gs=G, bandwidth=options$bandwidth)
+  result<-KLdegree(f)
+  if(length(result$Partial)==1 & all(is.na(result$Partial))) result$Partial<-rep(NA,length(G))
+  if(is.null(BPPARAM)) results<-lapply(seq_len(numPermutations),function(i){
+    l <- sample(labels, replace = FALSE)
+    A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
+    A<-lapply(A,abs)
+    G<-lapply(A,graph.adjacency, mode="undirected", weighted=weighted)# guarda a rede
+    f<-nDegreeDensities(Gs=G, bandwidth=options$bandwidth)
+    return(KLdegree(f)$theta)})
+  else results<-bplapply(seq_len(numPermutations),function(i){
+    l <- sample(labels, replace = FALSE)
+    A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
+    A<-lapply(A,abs)
     G<-lapply(A,graph.adjacency, mode="undirected", weighted=weighted)# guarda a rede
     f<-nDegreeDensities(Gs=G, bandwidth=options$bandwidth)
     result<-KLdegree(f)
@@ -829,10 +938,35 @@ degreeDistributionTest <- function(expr, labels, adjacencyMatrix, numPermutation
 #' spectralEntropyTest(expr, labels, adjacencyMatrix1,numPermutations=1,
 #'  options=list(bandwidth="Sturges"))
 #' @export
-spectralEntropyTest <- function(expr, labels, adjacencyMatrix, numPermutations=1000, options=list(bandwidth="Sturges"), BPPARAM=MulticoreParam()) {
-    lab<-levels(as.factor(labels)) # salva os fatores de labels em lab.
-    if(any(lab=="-1")) lab<-lab[-which(lab=="-1")] # se houver o fator "-1" ele é retirado dos fatores.
-    A<-lapply(lab, function(x) adjacencyMatrix(expr[labels==x,]))
+spectralEntropyTest <- function(expr, labels, adjacencyMatrix, numPermutations=1000, options=list(bandwidth="Sturges"), BPPARAM=NULL) {
+  lab<-levels(as.factor(labels)) # salva os fatores de labels em lab.
+  if(any(lab=="-1")) lab<-lab[-which(lab=="-1")] # se houver o fator "-1" ele é retirado dos fatores.
+  A<-lapply(lab, function(x) adjacencyMatrix(expr[labels==x,]))
+  A<-lapply(A,abs)
+  f<-nSpectralDensities(A, bandwidth=options$bandwidth) # Lista com as coordenadas (x,y) da dist. espectral dos grafos de "A"
+  entropies<-vector(length=length(A)) # vetor para guardar entropias
+  for(j in seq_len(length(A))){ # uma entropia para cada grafo
+    entropies[j]<-entropy(list("x"=f$x, "y"=f$densities[,j]))
+  }
+  meanDensity <- list("x"=f$x, "y"=rowMeans(f$densities)) # Calcula a entropia média a partir de uma distribuicao media
+  result<-sqrt((sum((entropies-entropy(meanDensity))^2))/length(entropies)) # idem e Calcula a raiz da soma dos quadrados das diferenças entre as entropias e a média
+  partial<-sqrt(((entropies-entropy(meanDensity))^2)/length(entropies)) # idem e Calcula a raiz da soma dos quadrados das diferenças entre as entropias e a média
+  if(is.null(BPPARAM)) results<-lapply(seq_len(numPermutations),function(i){
+    l <- sample(labels, replace = FALSE) # Reamostra os labels sem reposicao
+    A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
+    A<-lapply(A,abs)
+    f<-nSpectralDensities(A, bandwidth=options$bandwidth) # Lista com as coordenadas (x,y) da dist. espectral dos grafos de "A"
+    entropies<-vector(length=length(A)) # vetor para guardar entropias
+    for(j in seq_len(length(A))){ # uma entropia para cada grafo
+      entropies[j]<-entropy(list("x"=f$x, "y"=f$densities[,j]))
+    }
+    meanDensity <- list("x"=f$x, "y"=rowMeans(f$densities)) # Calcula a entropia média a partir de uma distribuicao media
+    return(sqrt((sum((entropies-entropy(meanDensity))^2))/length(entropies)))
+    }) # idem e Calcula a raiz da soma dos quadrados das diferenças entre as entropias e a média
+  else results<-bplapply(seq_len(numPermutations),function(i){
+    l <- sample(labels, replace = FALSE) # Reamostra os labels sem reposicao
+    A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
+    A<-lapply(A,abs)
     f<-nSpectralDensities(A, bandwidth=options$bandwidth) # Lista com as coordenadas (x,y) da dist. espectral dos grafos de "A"
     entropies<-vector(length=length(A)) # vetor para guardar entropias
     for(j in seq_len(length(A))){ # uma entropia para cada grafo
@@ -864,10 +998,23 @@ spectralEntropyTest <- function(expr, labels, adjacencyMatrix, numPermutations=1
 #' spectralDistributionTest(expr, labels, adjacencyMatrix1,numPermutations=1,
 #'  options=list(bandwidth="Sturges"))
 #' @export
-spectralDistributionTest <- function(expr, labels, adjacencyMatrix, numPermutations=1000, options=list(bandwidth="Sturges"),BPPARAM=MulticoreParam()) {
-    lab<-levels(as.factor(labels)) # salva os fatores de labels em lab.
-    if(any(lab=="-1")) lab<-lab[-which(lab=="-1")] # se houver o fator "-1" ele é retirado dos fatores.
-    A<-lapply(lab, function(x) adjacencyMatrix(expr[labels==x,]))
+spectralDistributionTest <- function(expr, labels, adjacencyMatrix, numPermutations=1000, options=list(bandwidth="Sturges"), BPPARAM=NULL) {
+  lab<-levels(as.factor(labels)) # salva os fatores de labels em lab.
+  if(any(lab=="-1")) lab<-lab[-which(lab=="-1")] # se houver o fator "-1" ele é retirado dos fatores.
+  A<-lapply(lab, function(x) adjacencyMatrix(expr[labels==x,]))
+  A<-lapply(A,abs)
+  f<-nSpectralDensities(A, bandwidth=options$bandwidth) # Lista com as coordenadas (x,y) da dist. espectral dos grafos de "A"
+  result<-KLspectrum(f)
+  if(is.null(BPPARAM)) results<-lapply(seq_len(numPermutations),function(i){
+    l <- sample(labels, replace = FALSE)
+    A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
+    A<-lapply(A,abs)
+    f<-nSpectralDensities(A, bandwidth=options$bandwidth) # Lista com as coordenadas (x,y) da dist. espectral dos grafos de "A"
+    return(KLspectrum(f)$theta)})
+  else results<-bplapply(seq_len(numPermutations),function(i){
+    l <- sample(labels, replace = FALSE)
+    A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
+    A<-lapply(A,abs)
     f<-nSpectralDensities(A, bandwidth=options$bandwidth) # Lista com as coordenadas (x,y) da dist. espectral dos grafos de "A"
     result<-KLspectrum(f)
     results<-bplapply(seq_len(numPermutations),function(i){
@@ -887,6 +1034,7 @@ spectralDistributionTest <- function(expr, labels, adjacencyMatrix, numPermutati
 
 resVertexInt <- function(A,expr,weighted,fun){
   n <- ncol(expr)# numero de genes
+  A<-lapply(A,abs)
   G<-lapply(A,graph.adjacency, mode="undirected", weighted=weighted)# guarda a rede
   s<-lapply(G, fun)# guarda o betweenness
   s<-do.call(rbind,s) # "s" é uma matrix onde serão guardados os vetores dos betweenness e um vetor de média deles
@@ -897,13 +1045,29 @@ resVertexInt <- function(A,expr,weighted,fun){
   return(cbind(result,t(sp))) # A estatítica é a soma das distancias
 }
 
+edgesResEdgesInt <- function(A,expr,weighted,fun){
+  A<-lapply(A,abs)
+  G<-lapply(A,graph.adjacency, mode="undirected", weighted=weighted)# guarda a rede
+  s<-lapply(G, function(x){
+    M<-as.matrix(as_adj(x,edges = T,type = "lower"))
+    M[M!=0]<-fun(x, directed=FALSE)
+    return(as.vector(M))
+  })# guarda a centralidade
+  s<-do.call(rbind,s) # "s" é uma matrix onde serão guardados os vetores dos betweenness e um vetor de média deles
+  s<-rbind(s,apply(s,MARGIN=2,FUN=mean))
+  sp<-s[-(nrow(s)),]
+  result<-apply(s[-(nrow(s)),],1,function(x) abs(x-s[dim(s)[1],]))
+  result<-apply(result,1,sum)
+  return(cbind(result,t(sp))) 
+}
+
 retTable <- function(results,output,expr,numPermutations,lab){
   results<-do.call(rbind,results)
   pvalue <- (1 + apply(t(t(results) >= output[,1]),2,sum))/(numPermutations + 1)
   saida<-cbind(stat=round(output[,1],3),pvalue=round(pvalue,4),qvalue=round(p.adjust(pvalue,method="fdr"),4),round(output[,-1],3))
   rownames(saida)<-colnames(expr)
   saida<-saida[order(saida[,"pvalue"]),]
-  colnames(saida)<-c("Test Statistic","Nominal p-value","Q-value",paste("Factor",0:max(as.numeric(lab))))
+  colnames(saida)<-c("Test Statistic","Nominal p-value","Q-value",paste(0:max(as.numeric(lab))))
   return(saida)
 }
 
@@ -1037,6 +1201,7 @@ clusteringCoefficientVertexTest <- function(expr, labels, adjacencyMatrix, numPe
   if(any(!v)) weighted <- TRUE
   if (!is.null(weighted)) { 
     n <- ncol(expr)
+    A<-lapply(A,abs)
     s<-lapply(A, clusterCoef)
     s<-do.call(rbind,s)
     s<-rbind(s,apply(s,MARGIN=2,FUN=mean))
@@ -1046,10 +1211,24 @@ clusteringCoefficientVertexTest <- function(expr, labels, adjacencyMatrix, numPe
     output<-cbind(result,t(sp))
   }
   else output<-resVertexInt(A,expr,weighted,function(x){transitivity(x,type="local", isolates="zero")})
-  results<-bplapply(seq_len(numPermutations),function(i){
+  if(is.null(BPPARAM)) results<-lapply(seq_len(numPermutations),function(i){
     l <- sample(labels, replace = FALSE)
     A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
     if (!is.null(weighted)) { 
+      n <- ncol(expr)
+      A<-lapply(A,abs)
+      s<-lapply(A, clusterCoef)
+      s<-do.call(rbind,s)
+      s<-rbind(s,apply(s,MARGIN=2,FUN=mean))
+      res<-apply(s[seq_len(dim(s)[1]-1),],1,function(x) abs(x-s[dim(s)[1],]))
+      return(apply(res,1,sum))
+    }
+    else return(resVertexInt(A,expr,weighted,function(x){transitivity(x,type="local", isolates="zero")})[,1])})
+  else results<-bplapply(seq_len(numPermutations),function(i){
+    l <- sample(labels, replace = FALSE)
+    A<-lapply(lab, function(x) adjacencyMatrix(expr[l==x,]))
+    if (!is.null(weighted)) { 
+      A<-lapply(A,abs)
       n <- ncol(expr)
       s<-lapply(A, clusterCoef)
       s<-do.call(rbind,s)
